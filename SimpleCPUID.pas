@@ -14,11 +14,11 @@
     Should be compatible with any Windows and Linux system running on x86(-64)
     architecture.
 
-  Version 1.1.6 (2020-03-09)
+  Version 1.1.8 (2021-01-05)
 
-  Last change 2020-08-02
+  Last change 2021-01-05
 
-  ©2016-2020 František Milt
+  ©2016-2021 František Milt
 
   Contacts:
     František Milt: frantisek.milt@gmail.com
@@ -40,7 +40,7 @@
   Sources:
     https://en.wikipedia.org/wiki/CPUID
     http://sandpile.org/x86/cpuid.htm
-    Intel® 64 and IA-32 Architectures Software Developer’s Manual (September 2016)
+    Intel® 64 and IA-32 Architectures Software Developer’s Manual (November 2020)
     AMD CPUID Specification; Publication #25481 Revision 2.34 (September 2010)
 
 ===============================================================================}
@@ -108,20 +108,20 @@ type
   ESCIDSystemError = class(ESCIDException);
   ESCIDIndexOutOfBounds = class(ESCIDException);
 
-{==============================================================================}
-{   Main CPUID routines                                                        }
-{==============================================================================}
+{===============================================================================
+    Main CPUID routines
+===============================================================================}
 
 Function CPUIDSupported: LongBool; register; assembler;
 
 procedure CPUID(Leaf, SubLeaf: UInt32; Result: Pointer); register; overload; assembler;
 procedure CPUID(Leaf: UInt32; Result: Pointer); overload;{$IFDEF CanInline} inline; {$ENDIF}
 
-{==============================================================================}
-{------------------------------------------------------------------------------}
-{                                 TSimpleCPUID                                 }
-{------------------------------------------------------------------------------}
-{==============================================================================}
+{===============================================================================
+--------------------------------------------------------------------------------
+                                  TSimpleCPUID
+--------------------------------------------------------------------------------
+===============================================================================}
 
 type
   TCPUIDResult = packed record
@@ -152,7 +152,7 @@ type
 
   TCPUIDInfo_AdditionalInfo = record
     BrandID:                Byte;
-    CacheLineFlushSize:     Word; // In bytes (raw data is in qwords)
+    CacheLineFlushSize:     Word; // in bytes (raw data is in qwords)
     LogicalProcessorCount:  Byte; // HTT (see features) must be on, otherwise reserved
     LocalAPICID:            Byte;
   end;
@@ -402,9 +402,9 @@ type
     SupportedExtensions:        TCPUIDInfo_SupportedExtensions;
   end;
 
-{==============================================================================}
-{   TSimpleCPUID - declaration                                                 }
-{==============================================================================}
+{===============================================================================
+    TSimpleCPUID - class declaration
+===============================================================================}
 
   TSimpleCPUID = class(TObject)
   private
@@ -455,15 +455,14 @@ type
     property Count: Integer read GetLeafCount;
   end;
 
-{==============================================================================}
-{------------------------------------------------------------------------------}
-{                                TSimpleCPUIDEx                                }
-{------------------------------------------------------------------------------}
-{==============================================================================}
-
-{==============================================================================}
-{   TSimpleCPUIDEx - declaration                                               }
-{==============================================================================}
+{===============================================================================
+--------------------------------------------------------------------------------
+                                 TSimpleCPUIDEx
+--------------------------------------------------------------------------------
+===============================================================================}
+{===============================================================================
+    TSimpleCPUIDEx - class declaration                                               
+===============================================================================}
 
   TSimpleCPUIDEx = class(TSimpleCPUID)
   private
@@ -483,7 +482,7 @@ uses
   {$IFDEF Windows}
     Windows
   {$ELSE}
-    baseunix, unixtype, pthreads
+    baseunix, pthreads
   {$ENDIF}
   {$IF not Defined(FPC) and (CompilerVersion >= 20)}  // Delphi 2009+
     , AnsiStrings
@@ -494,25 +493,19 @@ uses
   {$DEFINE W4055:={$WARN 4055 OFF}} // Conversion between ordinals and pointers is not portable
 {$ENDIF}
 
-{==============================================================================}
-{   Auxiliary routines and declarations                                        }
-{==============================================================================}
+{===============================================================================
+    Auxiliary routines and declarations
+===============================================================================}
 
 {$IFDEF Windows}
 
 Function GetProcessAffinityMask(hProcess: THandle; lpProcessAffinityMask,lpSystemAffinityMask: PPtrUInt): BOOL; stdcall; external kernel32;
 
-Function IsProcessorFeaturePresent(ProcessorFeature: DWORD): BOOL; stdcall; external kernel32;
-
-{$IF not Declared(PF_FLOATING_POINT_EMULATED)}
-const
-  PF_FLOATING_POINT_EMULATED = 1;
-{$IFEND}
-
 //------------------------------------------------------------------------------
 
 {$ELSE}
 
+Function errno_ptr: pcInt; cdecl; external name '__errno_location';
 Function pthread_getaffinity_np(thread: pthread_t; cpusetsize: size_t; cpuset: Pointer): cint; cdecl; external;
 Function pthread_setaffinity_np(thread: pthread_t; cpusetsize: size_t; cpuset: Pointer): cint; cdecl; external;
 Function sched_getaffinity(pid: pid_t; cpusetsize: size_t; mask: Pointer): cint; cdecl; external;
@@ -531,7 +524,7 @@ end;
 procedure RaiseErrorErrNo(ResultValue: cint; FuncName: String);{$IFDEF CanInline} inline; {$ENDIF}
 begin
 If ResultValue <> 0 then
-  raise ESCIDSystemError.CreateFmt('%s failed with error %d.',[FuncName,errno]);
+  raise ESCIDSystemError.CreateFmt('%s failed with error %d.',[FuncName,errno_ptr^]);
 end;
 
 {$ENDIF}
@@ -579,16 +572,29 @@ end;
 
 //------------------------------------------------------------------------------
 
+Function GetMSW: UInt16 assembler; register;
+asm
+{
+  Replacement for GetCR0, which cannot be used in user mode.
+  It returns only lower 16 bits of CR0 (a Machine Status Word), but that should
+  suffice.
+}
+  SMSW    AX
+end;
+
+//------------------------------------------------------------------------------
+
 Function GetXCR0L: UInt32; assembler; register;
 asm
   XOR     ECX,  ECX
 
+  // note - support for XGETBV (OSXSAVE) IS checked before calling this routine
   DB  $0F, $01, $D0 // XGETBV (XCR0.Low -> EAX (result), XCR0.Hi -> EDX)
 end;
 
-{==============================================================================}
-{   Main CPUID routines (ASM)                                                  }
-{==============================================================================}
+{===============================================================================
+    Main CPUID routines (ASM)
+===============================================================================}
 
 Function CPUIDSupported: LongBool;
 const
@@ -746,11 +752,11 @@ begin
 CPUID(Leaf,0,Result);
 end;
 
-{==============================================================================}
-{------------------------------------------------------------------------------}
-{                                 TSimpleCPUID                                 }
-{------------------------------------------------------------------------------}
-{==============================================================================}
+{===============================================================================
+--------------------------------------------------------------------------------
+                                  TSimpleCPUID
+--------------------------------------------------------------------------------
+===============================================================================}
 
 type
   TManufacturersItem = record
@@ -775,13 +781,13 @@ const
     (IDStr: 'VIA VIA VIA '; ID: mnVIA),
     (IDStr: 'Vortex86 SoC'; ID: mnVortex));
 
-{==============================================================================}
-{   TSimpleCPUID - implementation                                              }
-{==============================================================================}
+{===============================================================================
+    TSimpleCPUID - class implementation
+===============================================================================}
 
-{------------------------------------------------------------------------------}
-{   TSimpleCPUID - private methods                                             }
-{------------------------------------------------------------------------------}
+{-------------------------------------------------------------------------------
+    TSimpleCPUID - private methods
+-------------------------------------------------------------------------------}
 
 Function TSimpleCPUID.GetLeafCount: Integer;
 begin
@@ -798,9 +804,9 @@ else
   raise ESCIDIndexOutOfBounds.CreateFmt('TSimpleCPUID.GetLeaf: Index (%d) out of bounds.',[Index]);
 end;
 
-{------------------------------------------------------------------------------}
-{   TSimpleCPUID - protected methods                                           }
-{------------------------------------------------------------------------------}
+{-------------------------------------------------------------------------------
+    TSimpleCPUID - protected methods
+-------------------------------------------------------------------------------}
 
 procedure TSimpleCPUID.DeleteLeaf(Index: Integer);
 var
@@ -997,6 +1003,11 @@ begin
 {
   this whole function must be run on the same processor (core), otherwise
   results will be wrong
+
+  Intel documentation explicitly states that EAX[0..7] for this leaf is always
+  1, and this value should be ignored.
+  But according to sandpile, this leaf might be run several times with differing
+  results and this number gives the repeat count.
 }
 Index := IndexOf($00000002);
 If Index >= 0 then
@@ -1005,7 +1016,7 @@ If Index >= 0 then
       SetLength(fLeafs[Index].SubLeafs,Byte(fLeafs[Index].Data.EAX));
       fLeafs[Index].SubLeafs[0] := fLeafs[Index].Data;
       For i := 1 to High(fLeafs[Index].SubLeafs) do
-        CPUID(2,Addr(fLeafs[Index].SubLeafs[i]));
+        CPUID(2,UInt32(i),Addr(fLeafs[Index].SubLeafs[i]));
     end;
 end;
 
@@ -1446,17 +1457,7 @@ begin
 with fInfo.SupportedExtensions do
   begin
     X87         := fInfo.ProcessorFeatures.FPU;
-  {
-    EmulatedX87 := GetBit(GetCR0,2);
-
-    Control registers CR0 is not accesible in user mode, let's use the OS.
-  }
-  {$IFDEF Windows}
-    EmulatedX87 := IsProcessorFeaturePresent(PF_FLOATING_POINT_EMULATED);
-  {$ELSE}
-    {$IFDEF DebugMsgs}{$MESSAGE 'How to get whether FPU is emulated in linux?'}{$ENDIF}
-    EmulatedX87 := False;
-  {$ENDIF}
+    EmulatedX87 := GetBit(GetMSW,2);
     MMX         := fInfo.ProcessorFeatures.MMX and not EmulatedX87;
     SSE         := fInfo.ProcessorFeatures.SSE;
     SSE2        := fInfo.ProcessorFeatures.SSE2 and SSE;
@@ -1501,9 +1502,9 @@ begin
 Result := (A.EAX = B.EAX) and (A.EBX = B.EBX) and (A.ECX = B.ECX) and (A.EDX = B.EDX);
 end;
 
-{------------------------------------------------------------------------------}
-{   TSimpleCPUID - public methods                                              }
-{------------------------------------------------------------------------------}
+{-------------------------------------------------------------------------------
+    TSimpleCPUID - public methods
+-------------------------------------------------------------------------------}
 
 constructor TSimpleCPUID.Create(DoInitialize: Boolean = True; IncUnsupportedLeafs: Boolean = True);
 begin
@@ -1567,19 +1568,19 @@ For i := Low(fLeafs) to High(fLeafs) do
 end;
 
 
-{==============================================================================}
-{------------------------------------------------------------------------------}
-{                                TSimpleCPUIDEx                                }
-{------------------------------------------------------------------------------}
-{==============================================================================}
+{===============================================================================
+--------------------------------------------------------------------------------
+                                 TSimpleCPUIDEx
+--------------------------------------------------------------------------------
+===============================================================================}
 
-{==============================================================================}
-{   TSimpleCPUIDEx - implementation                                            }
-{==============================================================================}
+{===============================================================================
+    TSimpleCPUIDEx - class implementation
+===============================================================================}
 
-{------------------------------------------------------------------------------}
-{   TSimpleCPUIDEx - protected methods                                         }
-{------------------------------------------------------------------------------}
+{-------------------------------------------------------------------------------
+    TSimpleCPUIDEx - protected methods
+-------------------------------------------------------------------------------}
 
 class Function TSimpleCPUIDEx.SetThreadAffinity(ProcessorMask: PtrUInt): PtrUInt;
 begin
@@ -1591,9 +1592,9 @@ RaiseError(pthread_setaffinity_np(pthread_self,SizeOf(ProcessorMask),@ProcessorM
 {$ENDIF}
 end;
 
-{------------------------------------------------------------------------------}
-{   TSimpleCPUIDEx - public methods                                            }
-{------------------------------------------------------------------------------}
+{-------------------------------------------------------------------------------
+    TSimpleCPUIDEx - public methods
+-------------------------------------------------------------------------------}
 
 class Function TSimpleCPUIDEx.ProcessorAvailable(ProcessorID: Integer): Boolean;
 var
